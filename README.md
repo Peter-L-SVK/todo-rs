@@ -1,8 +1,8 @@
 # Rust + React TypeScript Todo App
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
-[![Top Language](https://img.shields.io/github/languages/top/Peter-L-SVK/TermTalk)](https://github.com/Peter-L-SVK/TermTalk)
-[![GitHub last commit](https://img.shields.io/github/last-commit/Peter-L-SVK/TermTalk)](https://github.com/Peter-L-SVK/TermTalk/commits/main)
+[![Top Language](https://img.shields.io/github/languages/top/Peter-L-SVK/TermTalk)](https://github.com/Peter-L-SVK/todo-rs)
+[![GitHub last commit](https://img.shields.io/github/last-commit/Peter-L-SVK/TermTalk)](https://github.com/Peter-L-SVK/todo-rs/commits/main)
 
 Full-stack todo application with Rust (Axum) backend and React TypeScript frontend.
 
