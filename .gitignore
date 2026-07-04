@@ -1,0 +1,26 @@
+# Rust
+/target/
+Cargo.lock
+*.db
+.env
+
+# Node.js
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.vite/
+
+# Compiled static files from frontend build
+/static/
+/static/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+.directory
+*.tmp
+*.temp
+
+# IDE
+.vscode/
+.idea/
+*~

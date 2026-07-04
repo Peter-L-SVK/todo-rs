@@ -1,0 +1,13 @@
+/*
+ * To Do WebApp
+ * Copyright (c) 2026 Peter Leukanič
+ * Under MIT License
+ * Feel free to share and modify
+ *
+ */
+ 
+.app {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
