@@ -1,3 +1,11 @@
+/*
+ * To Do WebApp
+ * Copyright (c) 2026 Peter Leukanič
+ * Under MIT License
+ * Feel free to share and modify
+ *
+ */
+
 CREATE TABLE tasks (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
