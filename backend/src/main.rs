@@ -9,15 +9,16 @@
 //! Todo backend with CSRF protection and CORS for React frontend.
 //! Database: SQLite with connection pooling.
 
-use axum::{http::{Method, HeaderValue, header::HeaderName}};
-use tokio::net::TcpListener;
-use std::net::SocketAddr;
-use tower_http::cors::CorsLayer;
+use axum::http::{HeaderValue, Method, header::HeaderName};
 use axum_csrf::{CsrfConfig, CsrfLayer};
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
+use tower_http::cors::CorsLayer;
 
+mod auth;
+mod database;
 mod models;
 mod routes;
-mod database;
 
 const X_CSRF_TOKEN: HeaderName = HeaderName::from_static("x-csrf-token");
 
@@ -29,7 +30,7 @@ async fn main() {
 
     let app = routes::create_router(pool)
         .layer(CsrfLayer::new(
-            CsrfConfig::default().with_cookie_name("authenticity_token")
+            CsrfConfig::default().with_cookie_name("authenticity_token"),
         ))
         .layer(
             CorsLayer::new()
@@ -42,7 +43,7 @@ async fn main() {
                     axum::http::header::ORIGIN,
                     X_CSRF_TOKEN,
                 ])
-                .allow_credentials(true)
+                .allow_credentials(true),
         );
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8000));

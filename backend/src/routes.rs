@@ -8,25 +8,30 @@
 
 //! REST API routes. Returns full Task objects on create/update to keep frontend state consistent.
 
+use crate::auth::{extract_user_id, generate_token, hash_password, verify_password};
+use crate::models::{AuthResponse, Claims, LoginRequest, RegisterRequest, User, UserInfo};
+use crate::models::{CreateTask, Task, UpdateTask};
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json, Router,
-    routing::{get, post, patch, delete},
+    routing::{delete, get, patch, post},
 };
-use serde_json::{json, Value};
+use axum_csrf::CsrfToken;
+use serde_json::{Value, json};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 use validator::Validate;
-use axum_csrf::CsrfToken;
-use crate::models::{Task, CreateTask, UpdateTask};
 
 pub fn create_router(pool: SqlitePool) -> Router {
     Router::new()
         .route("/api/tasks", get(get_tasks).post(create_task))
-        .route("/api/tasks/{id}", patch(update_task).delete(delete_task)) 
+        .route("/api/tasks/{id}", patch(update_task).delete(delete_task))
         .route("/api/csrf", get(get_csrf_token))
+        .route("/api/auth/register", post(register))
+        .route("/api/auth/login", post(login))
+        .route("/api/auth/me", get(get_current_user))
         .with_state(pool)
 }
 
@@ -65,19 +70,27 @@ async fn create_task(
                 Ok(task) => (StatusCode::CREATED, Json(json!(task))).into_response(),
                 Err(e) => {
                     eprintln!("Failed to fetch created task: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                        "status": "error",
-                        "message": "Task created but failed to fetch"
-                    }))).into_response()
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "status": "error",
+                            "message": "Task created but failed to fetch"
+                        })),
+                    )
+                        .into_response()
                 }
             }
-        },
+        }
         Err(e) => {
             eprintln!("Database error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "status": "error",
-                "message": "Failed to create task"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to create task"
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -90,11 +103,15 @@ async fn get_tasks(State(pool): State<SqlitePool>) -> impl IntoResponse {
         Ok(tasks) => (StatusCode::OK, Json(tasks)).into_response(),
         Err(e) => {
             eprintln!("Database error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "status": "error",
-                "message": "Failed to fetch tasks"
-            }))).into_response()
-        },
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to fetch tasks"
+                })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -117,7 +134,7 @@ async fn update_task(
         let due_date = payload.due_date.or(task.due_date);
 
         let update_result = sqlx::query(
-            "UPDATE tasks SET title = ?, completed = ?, priority = ?, due_date = ? WHERE id = ?"
+            "UPDATE tasks SET title = ?, completed = ?, priority = ?, due_date = ? WHERE id = ?",
         )
         .bind(&title)
         .bind(&completed)
@@ -137,33 +154,42 @@ async fn update_task(
                     Ok(updated_task) => (StatusCode::OK, Json(json!(updated_task))).into_response(),
                     Err(e) => {
                         eprintln!("Failed to fetch updated task: {}", e);
-                        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                            "status": "error",
-                            "message": "Task updated but failed to fetch"
-                        }))).into_response()
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({
+                                "status": "error",
+                                "message": "Task updated but failed to fetch"
+                            })),
+                        )
+                            .into_response()
                     }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("Database error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                    "status": "error",
-                    "message": "Failed to update task"
-                }))).into_response()
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "status": "error",
+                        "message": "Failed to update task"
+                    })),
+                )
+                    .into_response()
             }
         }
     } else {
-        (StatusCode::NOT_FOUND, Json(json!({
-            "status": "error",
-            "message": "Task not found"
-        }))).into_response()
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "error",
+                "message": "Task not found"
+            })),
+        )
+            .into_response()
     }
 }
 
-async fn delete_task(
-    Path(id): Path<String>,
-    State(pool): State<SqlitePool>,
-) -> impl IntoResponse {
+async fn delete_task(Path(id): Path<String>, State(pool): State<SqlitePool>) -> impl IntoResponse {
     match sqlx::query("DELETE FROM tasks WHERE id = ?")
         .bind(&id)
         .execute(&pool)
@@ -173,19 +199,229 @@ async fn delete_task(
             if result.rows_affected() > 0 {
                 (StatusCode::OK, Json(json!({ "status": "success" }))).into_response()
             } else {
-                (StatusCode::NOT_FOUND, Json(json!({
-                    "status": "error",
-                    "message": "Task not found"
-                }))).into_response()
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "status": "error",
+                        "message": "Task not found"
+                    })),
+                )
+                    .into_response()
             }
-        },
+        }
         Err(e) => {
             eprintln!("Database error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to delete task"
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// REGISTER
+async fn register(
+    State(pool): State<SqlitePool>,
+    Json(payload): Json<RegisterRequest>,
+) -> impl IntoResponse {
+    // Validácia
+    if let Err(e) = payload.validate() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
                 "status": "error",
-                "message": "Failed to delete task"
-            }))).into_response()
-        },
+                "message": format!("Validation error: {}", e)
+            })),
+        )
+            .into_response();
+    }
+
+    // Check for already exiting email
+    let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
+        .bind(&payload.email)
+        .fetch_optional(&pool)
+        .await;
+
+    if let Ok(Some(_)) = existing {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "status": "error",
+                "message": "User with this email already exists"
+            })),
+        )
+            .into_response();
+    }
+
+    // Hash password
+    let password_hash = match hash_password(&payload.password) {
+        Ok(hash) => hash,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Creatio of user
+    let user_id = Uuid::new_v4().to_string();
+    let now = chrono::Utc::now();
+
+    match sqlx::query(
+        "INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(&user_id)
+    .bind(&payload.username)
+    .bind(&payload.email)
+    .bind(&password_hash)
+    .bind(now.to_rfc3339())
+    .execute(&pool)
+    .await
+    {
+        Ok(_) => {
+            // Generate ne token
+            match generate_token(&user_id, &payload.email) {
+                Ok(token) => {
+                    let response = AuthResponse {
+                        token,
+                        user: UserInfo {
+                            id: user_id,
+                            username: payload.username,
+                            email: payload.email,
+                        },
+                    };
+                    (StatusCode::CREATED, Json(json!(response))).into_response()
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "status": "error",
+                        "message": e
+                    })),
+                )
+                    .into_response(),
+            }
+        }
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to create user"
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// LOGIN 
+async fn login(
+    State(pool): State<SqlitePool>,
+    Json(payload): Json<LoginRequest>,
+) -> impl IntoResponse {
+    // Find user by email
+    let user: User = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
+        .bind(&payload.email)
+        .fetch_one(&pool)
+        .await
+    {
+        Ok(user) => user,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": "Invalid email or password"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Verify password
+    match verify_password(&payload.password, &user.password_hash) {
+        Ok(true) => {
+            // Generate JWT token
+            match generate_token(&user.id, &user.email) {
+                Ok(token) => {
+                    let response = AuthResponse {
+                        token,
+                        user: user.into(),
+                    };
+                    (StatusCode::OK, Json(json!(response))).into_response()
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "status": "error",
+                        "message": e
+                    })),
+                )
+                    .into_response(),
+            }
+        }
+        _ => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "error",
+                "message": "Invalid email or password"
+            })),
+        )
+            .into_response(),
+    }
+}
+
+// GET CURRENT USER
+async fn get_current_user(
+    State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    // Extract token from Authorization header
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Find user
+    match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = ?")
+        .bind(&user_id)
+        .fetch_one(&pool)
+        .await
+    {
+        Ok(user) => {
+            let user_info: UserInfo = user.into();
+            (StatusCode::OK, Json(json!(user_info))).into_response()
+        }
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "error",
+                "message": "User not found"
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -197,7 +433,7 @@ mod tests {
 
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        
+
         sqlx::query(
             "CREATE TABLE tasks (
                 id TEXT PRIMARY KEY,
@@ -206,7 +442,7 @@ mod tests {
                 priority TEXT DEFAULT 'medium',
                 due_date TEXT,
                 created_at TEXT NOT NULL
-            )"
+            )",
         )
         .execute(&pool)
         .await
@@ -218,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_task_validation() {
         let pool = setup_test_db().await;
-        
+
         // Valid task
         let valid_task = CreateTask {
             title: "Test".to_string(),
@@ -243,7 +479,7 @@ mod tests {
         // Insert test task directly
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
-        
+
         sqlx::query(
             "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
         )
@@ -271,11 +507,11 @@ mod tests {
     #[tokio::test]
     async fn test_update_task() {
         let pool = setup_test_db().await;
-        
+
         // Insert test task
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
-        
+
         sqlx::query(
             "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
         )
@@ -291,7 +527,7 @@ mod tests {
 
         // Update task
         let updated = sqlx::query_as::<_, Task>(
-            "UPDATE tasks SET title = ?, completed = ? WHERE id = ? RETURNING *"
+            "UPDATE tasks SET title = ?, completed = ? WHERE id = ? RETURNING *",
         )
         .bind("Updated title")
         .bind(true)
@@ -307,11 +543,11 @@ mod tests {
     #[tokio::test]
     async fn test_delete_task() {
         let pool = setup_test_db().await;
-        
+
         // Insert test task
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
-        
+
         sqlx::query(
             "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
         )
@@ -346,7 +582,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_nonexistent_task() {
         let pool = setup_test_db().await;
-        
+
         let result = sqlx::query("DELETE FROM tasks WHERE id = ?")
             .bind("nonexistent-id")
             .execute(&pool)
@@ -363,7 +599,7 @@ mod tests {
         // Insert test task with priority
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
-        
+
         sqlx::query(
             "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
         )
@@ -394,7 +630,7 @@ mod tests {
         // Insert test task with due date
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
-        
+
         sqlx::query(
             "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
         )

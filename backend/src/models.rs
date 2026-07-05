@@ -9,7 +9,7 @@
 //! Task entity and DTOs. DTOs separate from Task because id/created_at are auto-generated.
 
 use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use validator::Validate;
 
@@ -69,6 +69,65 @@ impl<T> ApiResponse<T> {
             message: Some(message),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Validate, Clone)]
+pub struct User {
+    pub id: String,
+    #[validate(length(min = 3, max = 50))]
+    pub username: String,
+    #[validate(email)]
+    pub email: String,
+    #[serde(skip_serializing)] // Never send in plane JSON
+    pub password_hash: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct RegisterRequest {
+    #[validate(length(min = 3, max = 50))]
+    pub username: String,
+    #[validate(email)]
+    pub email: String,
+    #[validate(length(min = 8))]
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthResponse {
+    pub token: String,
+    pub user: UserInfo,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserInfo {
+    pub id: String,
+    pub username: String,
+    pub email: String,
+}
+
+impl From<User> for UserInfo {
+    fn from(user: User) -> Self {
+        Self {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+        }
+    }
+}
+
+// OPRAVENÉ - pridané Deserialize
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Claims {
+    pub sub: String,        // user_id
+    pub email: String,
+    pub exp: usize,         // expiration timestamp
 }
 
 #[cfg(test)]

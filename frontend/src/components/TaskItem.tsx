@@ -196,6 +196,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
       {task.priority && (
         <span 
           className="priority-badge"
+	  data-priority={task.priority}
           style={{ backgroundColor: getPriorityColor(task.priority) }}
           title={getPriorityLabel(task.priority)}
         >

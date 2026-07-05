@@ -5,7 +5,8 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/Peter-L-SVK/todo-rs)](https://github.com/Peter-L-SVK/todo-rs/releases/latest)
 [![GitHub last commit](https://img.shields.io/github/last-commit/Peter-L-SVK/todo-rs)](https://github.com/Peter-L-SVK/todo-rs/commits/main)
 
-Full-stack todo application with Rust (Axum) backend and React TypeScript frontend.
+Full-stack todo application with Rust (Axum) backend and React TypeScript frontend and Sqlite3 as database.
+This project serves as learning example and demo for new devs.
 
 ![ToDo demo](demo.png) 
 
@@ -17,13 +18,15 @@ Full-stack todo application with Rust (Axum) backend and React TypeScript fronte
 - Progress tracking with percentage bar
 - Task filtering (All/Active/Completed)
 - Inline editing (double-click or edit button)
+- User authentication (Register/Login)
+- JWT token-based authentication
 - CSRF protection
 - SQLite database
 - Responsive design
 
 ## Tech Stack
 
-**Backend:** Rust, Axum, Tokio, SQLx, SQLite, Serde, UUID, Chrono, Validator
+**Backend:** Rust, Axum, Tokio, SQLx, SQLite, Serde, UUID, Chrono, Validator, Argon2, JSON Web Token
 
 **Frontend:** React 19, TypeScript 5.5, Vite 6.3, Axios, React Icons
 
@@ -36,19 +39,27 @@ todo-app-rs/
 │   │   ├── main.rs          # Entry point
 │   │   ├── database.rs      # DB connection
 │   │   ├── models.rs        # Data models
-│   │   └── routes.rs        # API routes
+│   │   ├── routes.rs        # API routes
+│   │   └── auth.rs          # Authentication (JWT, password hashing)
 │   ├── migrations/          # SQL migrations
+│   │   ├── 20240610000000_create_tasks.sql
+│   │   ├── 20240610000001_add_indexes.sql
+│   │   └── 20240612000000_create_users.sql
+│   ├── .env                 # Environment variables
 │   └── Cargo.toml
 └── frontend/
     ├── src/
     │   ├── api/
-    │   │   └── tasksApi.ts
+    │   │   ├── tasksApi.ts  # Task API calls
+    │   │   └── authApi.ts   # Authentication API calls
     │   ├── components/
     │   │   ├── TaskList.tsx
     │   │   ├── TaskForm.tsx
     │   │   ├── TaskItem.tsx
     │   │   ├── TaskFilters.tsx
-    │   │   └── TasksContainer.tsx
+    │   │   ├── TasksContainer.tsx
+    │   │   ├── Login.tsx
+    │   │   └── Register.tsx
     │   ├── types/
     │   │   └── task.types.ts
     │   ├── App.tsx
@@ -60,23 +71,46 @@ todo-app-rs/
 ## Setup
 
 ### Backend
+
 ```bash
 cd backend
+
+# Create .env file with database and JWT secret
 echo "DATABASE_URL=sqlite:todo.db" > .env
+echo "JWT_SECRET=your-super-secret-key-change-in-production" >> .env
+
+# Run database migrations
 sqlx migrate run
+
+# Start the server
 cargo run
 # Server: http://localhost:8000
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
+
+# Install dependencies
 npm install
+
+# Start development server
 npm run dev
 # App: http://localhost:5173
 ```
 
 ## API Endpoints
+
+### Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/login` | Login and get JWT token |
+| GET | `/api/auth/me` | Get current user info (requires token) |
+
+### Tasks (require authentication)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -87,7 +121,9 @@ npm run dev
 | DELETE | `/api/tasks/{id}` | Delete task |
 
 ### Data Models
+
 ```typescript
+// Task
 Task {
   id: string
   title: string
@@ -95,6 +131,25 @@ Task {
   priority?: "low" | "medium" | "high"
   due_date?: string  // YYYY-MM-DD
   created_at: number
+}
+
+// User
+User {
+  id: string
+  username: string
+  email: string
+}
+
+// Authentication
+RegisterRequest {
+  username: string
+  email: string
+  password: string  // min 8 characters
+}
+
+LoginRequest {
+  email: string
+  password: string
 }
 ```
 
@@ -170,26 +225,43 @@ npm run test -- --coverage
 ### API Testing with curl
 
 ```bash
-# Get CSRF token
-CSRF_TOKEN=$(curl -s http://localhost:8000/api/csrf | grep -o '"csrfToken":"[^"]*"' | cut -d'"' -f4)
+# 1. Register a new user
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser","email":"test@example.com","password":"password123"}'
 
-# Create task
+# 2. Login and get JWT token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password123"}' \
+  | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+
+# 3. Get CSRF token (using the JWT token)
+CSRF_TOKEN=$(curl -s -X GET http://localhost:8000/api/csrf \
+  -H "Authorization: Bearer $TOKEN" \
+  | grep -o '"csrfToken":"[^"]*"' | cut -d'"' -f4)
+
+# 4. Create a task
 curl -X POST http://localhost:8000/api/tasks \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -d '{"title":"Learn Rust","priority":"high"}'
 
-# Get all tasks
-curl http://localhost:8000/api/tasks
+# 5. Get all tasks
+curl -X GET http://localhost:8000/api/tasks \
+  -H "Authorization: Bearer $TOKEN"
 
-# Update task (replace {id} with actual task ID)
+# 6. Update task (replace {id} with actual task ID)
 curl -X PATCH http://localhost:8000/api/tasks/{id} \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -d '{"completed":true}'
 
-# Delete task (replace {id} with actual task ID)
+# 7. Delete task (replace {id} with actual task ID)
 curl -X DELETE http://localhost:8000/api/tasks/{id} \
+  -H "Authorization: Bearer $TOKEN" \
   -H "X-CSRF-Token: $CSRF_TOKEN"
 ```
 
@@ -198,15 +270,18 @@ curl -X DELETE http://localhost:8000/api/tasks/{id} \
 1. Import the collection (optional)
 2. Set environment variable: `base_url = http://localhost:8000`
 3. Test endpoints in this order:
-   1. `GET /api/csrf` - Store CSRF token
-   2. `POST /api/tasks` - Create task
-   3. `GET /api/tasks` - Get all tasks
-   4. `PATCH /api/tasks/{id}` - Update task
-   5. `DELETE /api/tasks/{id}` - Delete task
+   1. `POST /api/auth/register` - Create account
+   2. `POST /api/auth/login` - Get JWT token
+   3. `GET /api/csrf` - Store CSRF token
+   4. `POST /api/tasks` - Create task
+   5. `GET /api/tasks` - Get all tasks
+   6. `PATCH /api/tasks/{id}` - Update task
+   7. `DELETE /api/tasks/{id}` - Delete task
 
 **Postman Headers:**
 ```
 Content-Type: application/json
+Authorization: Bearer {{jwt_token}}
 X-CSRF-Token: {{csrf_token}}
 ```
 
@@ -219,6 +294,7 @@ npm run lint
 
 ## Database Schema
 
+### Tasks Table
 ```sql
 CREATE TABLE tasks (
     id TEXT PRIMARY KEY,
@@ -234,14 +310,41 @@ CREATE INDEX idx_tasks_priority ON tasks(priority);
 CREATE INDEX idx_tasks_created_at ON tasks(created_at DESC);
 ```
 
+### Users Table
+```sql
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
+```
+
+## Environment Variables
+
+### Backend (`.env`)
+```env
+DATABASE_URL=sqlite:todo.db
+JWT_SECRET=your-super-secret-key-change-in-production
+```
+
+### Frontend (`.env`)
+```env
+VITE_API_URL=http://localhost:8000
+```
+
 ## Development Commands
 
 ### Backend
 ```bash
-cargo run        # Run server
+cargo run              # Run server
 cargo build --release  # Build release
-cargo test       # Run tests
-sqlx migrate run  # Run migrations
+cargo test             # Run tests
+sqlx migrate run       # Run migrations
 ```
 
 ### Frontend
@@ -253,6 +356,25 @@ npm run test      # Run tests
 npm run lint      # Run ESLint
 npx tsc --noEmit  # Type check
 ```
+
+## Security Features
+
+- **JWT Authentication** - Stateless token-based authentication
+- **Password Hashing** - Argon2 for secure password storage
+- **CSRF Protection** - Prevents cross-site request forgery
+- **CORS Configuration** - Secure frontend-backend communication
+- **Input Validation** - Server-side validation for all inputs
+
+## Roadmap
+
+- [ ] Password reset functionality
+- [ ] Email verification
+- [ ] User profile management
+- [ ] Task sharing
+- [ ] Dark mode
+- [ ] Drag and drop reordering
+- [ ] Task search
+- [ ] Pagination
 
 ## Contributing
 
@@ -270,3 +392,17 @@ Keep changes:
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
+
+## Author
+
+**Peter Leukanič** - [@Peter-L-SVK](https://github.com/Peter-L-SVK)
+
+## Acknowledgments
+
+- [Axum](https://github.com/tokio-rs/axum) - Web framework for Rust
+- [SQLx](https://github.com/launchbadge/sqlx) - Async SQL toolkit
+- [React](https://reactjs.org/) - UI library
+- [TypeScript](https://www.typescriptlang.org/) - Typed JavaScript
+- [Vite](https://vitejs.dev/) - Build tool
+
+---

@@ -18,34 +18,78 @@ import {
   deleteTask,
   getErrorMessage 
 } from '@/api/tasksApi';
+import { getCurrentUser, removeAuthToken, getAuthToken, setAuthToken } from '@/api/authApi';
 import TaskForm from './TaskForm';
 import TasksContainer from './TasksContainer';
 import TaskFilters from './TaskFilters';
+import Login from './Login';
+import Register from './Register';
 import './TaskList.css';
+import './Auth.css';
 
-// Wrappers to avoid passing async functions directly to event handlers
-// ESLint rule @typescript-eslint/no-misused-promises requires this
 const TaskList: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterType>('all');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [username, setUsername] = useState<string>('');
+  const [showRegister, setShowRegister] = useState<boolean>(false);
 
+  // Check authentication on mount
   useEffect(() => {
-    const initialize = async (): Promise<void> => {
-      try {
-        await getCsrfToken();
-        const tasksData = await fetchTasks();
-        setTasks(tasksData);
-      } catch (err) {
-        setError(getErrorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    };
-    void initialize();
+    const token = getAuthToken();
+    if (token) {
+      setAuthToken(token);
+      setIsAuthenticated(true);
+      getCurrentUser()
+        .then(user => setUsername(user.username))
+        .catch(() => {
+          removeAuthToken();
+          setIsAuthenticated(false);
+        });
+    } else {
+      setIsAuthenticated(false);
+    }
   }, []);
+
+  // Load tasks when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const initialize = async (): Promise<void> => {
+        try {
+          await getCsrfToken();
+          const tasksData = await fetchTasks();
+          setTasks(tasksData);
+        } catch (err) {
+          setError(getErrorMessage(err));
+        } finally {
+          setLoading(false);
+        }
+      };
+      void initialize();
+    }
+  }, [isAuthenticated]);
+
+  const handleLogin = async () => {
+    try {
+      const user = await getCurrentUser();
+      setUsername(user.username);
+      setIsAuthenticated(true);
+      setLoading(true);
+    } catch (err) {
+      setError('Failed to load user data');
+    }
+  };
+
+  const handleLogout = () => {
+    removeAuthToken();
+    setIsAuthenticated(false);
+    setUsername('');
+    setTasks([]);
+    setError(null);
+  };
 
   const handleAddTask = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -114,12 +158,36 @@ const TaskList: React.FC = () => {
   const completedTasks = tasks.filter(t => t.completed).length;
   const completionPercentage = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
 
+  if (!isAuthenticated) {
+    return (
+      <div className="auth-wrapper">
+        {showRegister ? (
+          <Register 
+            onRegister={handleLogin} 
+            onSwitchToLogin={() => setShowRegister(false)} 
+          />
+        ) : (
+          <Login 
+            onLogin={handleLogin} 
+            onSwitchToRegister={() => setShowRegister(true)} 
+          />
+        )}
+      </div>
+    );
+  }
+
   if (loading) return <div className="container loading">Loading...</div>;
   if (error) return <div className="container error">Error: {error}</div>;
 
   return (
     <div className="container">
-      <h1>📋 Minimal To-Do</h1>
+      <div className="header">
+        <h1>📋 Todo List</h1>
+        <div className="user-info">
+          <span>👤 {username}</span>
+          <button onClick={handleLogout} className="logout-btn">Logout</button>
+        </div>
+      </div>
       
       <TaskForm 
         newTask={newTask}

@@ -6,9 +6,6 @@
  *
  */
 
-// Axios client with CSRF token management.
-// Token fetched once and added to all subsequent requests.
-
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { Task, CreateTaskDto, UpdateTaskDto, ApiResponse } from '@/types/task.types';
 
@@ -16,7 +13,6 @@ interface CsrfResponse {
   csrfToken: string;
 }
 
-// Type-safe access to import.meta.env
 interface ImportMetaEnv {
   VITE_API_URL?: string;
 }
@@ -27,7 +23,8 @@ interface ImportMeta {
 
 const API_URL = (import.meta as unknown as ImportMeta).env?.VITE_API_URL || 'http://localhost:8000';
 
-const api: AxiosInstance = axios.create({
+// EXPORTUJ api aby ho mohli používať ostatné súbory
+export const api: AxiosInstance = axios.create({
   baseURL: API_URL,
   withCredentials: true,
   headers: {
