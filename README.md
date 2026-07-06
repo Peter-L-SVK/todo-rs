@@ -79,7 +79,7 @@ cd backend
 echo "DATABASE_URL=sqlite:todo.db" > .env
 echo "JWT_SECRET=your-super-secret-key-change-in-production" >> .env
 
-# Create emoty database
+# Create empty database
 sqlite3 todo.db "VACUUM;"
 
 # Run database migrations
