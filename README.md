@@ -43,8 +43,8 @@ todo-app-rs/
 │   │   └── auth.rs          # Authentication (JWT, password hashing)
 │   ├── migrations/          # SQL migrations
 │   │   ├── 20240610000000_create_tasks.sql
-│   │   ├── 20240610000001_add_indexes.sql
-│   │   └── 20240612000000_create_users.sql
+│   │   ├── 20240610000001_create_users.sql
+│   │   └── 20240612000000_add_indexes.sql
 │   ├── .env                 # Environment variables
 │   └── Cargo.toml
 └── frontend/
@@ -78,6 +78,9 @@ cd backend
 # Create .env file with database and JWT secret
 echo "DATABASE_URL=sqlite:todo.db" > .env
 echo "JWT_SECRET=your-super-secret-key-change-in-production" >> .env
+
+# Create emoty database
+sqlite3 todo.db "VACUUM;"
 
 # Run database migrations
 sqlx migrate run
@@ -367,6 +370,7 @@ npx tsc --noEmit  # Type check
 
 ## Roadmap
 
+- [ ] Isolated per user tasks 
 - [ ] Password reset functionality
 - [ ] Email verification
 - [ ] User profile management

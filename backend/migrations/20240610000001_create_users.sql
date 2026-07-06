@@ -6,11 +6,11 @@
  *
  */
 
-CREATE TABLE tasks (
+-- Create users table
+CREATE TABLE users (
     id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    completed BOOLEAN NOT NULL DEFAULT 0,
-    priority TEXT DEFAULT 'medium',
-    due_date TEXT,
+    username TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
