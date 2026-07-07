@@ -44,7 +44,8 @@ todo-app-rs/
 │   ├── migrations/          # SQL migrations
 │   │   ├── 20240610000000_create_tasks.sql
 │   │   ├── 20240610000001_create_users.sql
-│   │   └── 20240612000000_add_indexes.sql
+│   │   ├── 20240612000000_add_indexes.sql
+│   │   └── 20240613000000_add_user_id_to_tasks.sql
 │   ├── .env                 # Environment variables
 │   └── Cargo.toml
 └── frontend/
@@ -306,8 +307,11 @@ CREATE TABLE tasks (
     priority TEXT DEFAULT 'medium',
     due_date TEXT,
     created_at TEXT NOT NULL
+	user_id TEXT NOT NULL DEFAULT
 );
 
+-- Create index for faster user-specific queries
+CREATE INDEX idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX idx_tasks_completed ON tasks(completed);
 CREATE INDEX idx_tasks_priority ON tasks(priority);
 CREATE INDEX idx_tasks_created_at ON tasks(created_at DESC);
