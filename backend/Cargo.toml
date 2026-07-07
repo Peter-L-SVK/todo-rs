@@ -8,7 +8,7 @@ rand = "0.8"
 axum = { version = "0.8", features = ["tokio", "http1", "macros"] }
 axum_csrf = { version = "0.11", features = ["layer"] }  
 tokio = { version = "1.0", features = ["full"] }
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls", "chrono"] }
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls", "chrono", "uuid"] }
 chrono = { version = "0.4", features = ["serde"] }
 tower-http = { version = "0.5", features = ["cors"] }
 serde = { version = "1.0", features = ["derive"] }

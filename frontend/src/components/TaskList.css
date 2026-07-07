@@ -492,3 +492,26 @@ h1 {
   align-items: center;
   background: #f8f9fa;
 }
+
+.task-icon {
+  vertical-align: middle;
+  margin-right: 10px;
+  width: 32px;
+  height: 32px;
+  display: inline-block;
+}
+
+/* To-do list icon */
+.header h1 {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+  .task-icon {
+    width: 24px;
+    height: 24px;
+    margin-right: 6px;
+  }
+}

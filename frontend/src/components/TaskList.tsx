@@ -182,7 +182,16 @@ const TaskList: React.FC = () => {
   return (
     <div className="container">
       <div className="header">
-        <h1>📋 Todo List</h1>
+        <h1>
+          <img 
+            src="/to-do-list.svg"
+            alt="Todo List" 
+            className="to-do-list"
+            width="32"
+            height="32"
+          />
+          {' '}Todo List
+        </h1>
         <div className="user-info">
           <span>👤 {username}</span>
           <button onClick={handleLogout} className="logout-btn">Logout</button>

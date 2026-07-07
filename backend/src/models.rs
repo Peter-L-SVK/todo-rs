@@ -21,6 +21,7 @@ pub struct Task {
     pub completed: bool,
     pub priority: Option<String>,
     pub due_date: Option<String>,
+    pub user_id: String, // NEW - links task to user
     #[serde(with = "chrono::serde::ts_seconds")]
     pub created_at: DateTime<Utc>,
 }
@@ -32,6 +33,7 @@ pub struct CreateTask {
     #[validate(length(min = 1, max = 10))]
     pub priority: Option<String>,
     pub due_date: Option<String>,
+    // user_id is added by backend from JWT, not by client
 }
 
 // All fields optional for partial updates (PATCH)
@@ -78,7 +80,7 @@ pub struct User {
     pub username: String,
     #[validate(email)]
     pub email: String,
-    #[serde(skip_serializing)] // Never send in plane JSON
+    #[serde(skip_serializing)]
     pub password_hash: String,
     pub created_at: DateTime<Utc>,
 }
@@ -122,12 +124,11 @@ impl From<User> for UserInfo {
     }
 }
 
-// OPRAVENÉ - pridané Deserialize
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,        // user_id
+    pub sub: String, // user_id
     pub email: String,
-    pub exp: usize,         // expiration timestamp
+    pub exp: usize, // expiration timestamp
 }
 
 #[cfg(test)]

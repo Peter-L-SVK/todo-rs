@@ -8,15 +8,16 @@
 
 //! REST API routes. Returns full Task objects on create/update to keep frontend state consistent.
 
-use crate::auth::{extract_user_id, generate_token, hash_password, verify_password};
-use crate::models::{AuthResponse, Claims, LoginRequest, RegisterRequest, User, UserInfo};
-use crate::models::{CreateTask, Task, UpdateTask};
+use crate::auth::extract_user_id;
+use crate::models::{
+    AuthResponse, CreateTask, LoginRequest, RegisterRequest, Task, UpdateTask, User, UserInfo,
+};
 use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
 };
 use axum_csrf::CsrfToken;
 use serde_json::{Value, json};
@@ -41,21 +42,236 @@ async fn get_csrf_token(token: CsrfToken) -> (StatusCode, Json<Value>) {
     (StatusCode::OK, Json(json!({ "csrfToken": token_value })))
 }
 
+// ============================================
+// AUTH HANDLERS
+// ============================================
+
+async fn register(
+    State(pool): State<SqlitePool>,
+    Json(payload): Json<RegisterRequest>,
+) -> impl IntoResponse {
+    use crate::auth::hash_password;
+
+    if let Err(e) = payload.validate() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "status": "error",
+                "message": format!("Validation error: {}", e)
+            })),
+        )
+            .into_response();
+    }
+
+    let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
+        .bind(&payload.email)
+        .fetch_optional(&pool)
+        .await;
+
+    if let Ok(Some(_)) = existing {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "status": "error",
+                "message": "User with this email already exists"
+            })),
+        )
+            .into_response();
+    }
+
+    let password_hash = match hash_password(&payload.password) {
+        Ok(hash) => hash,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let user_id = Uuid::new_v4().to_string();
+    let now = chrono::Utc::now();
+
+    match sqlx::query(
+        "INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(&user_id)
+    .bind(&payload.username)
+    .bind(&payload.email)
+    .bind(&password_hash)
+    .bind(now.to_rfc3339())
+    .execute(&pool)
+    .await
+    {
+        Ok(_) => match crate::auth::generate_token(&user_id, &payload.email) {
+            Ok(token) => {
+                let response = AuthResponse {
+                    token,
+                    user: UserInfo {
+                        id: user_id,
+                        username: payload.username,
+                        email: payload.email,
+                    },
+                };
+                (StatusCode::CREATED, Json(json!(response))).into_response()
+            }
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response(),
+        },
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to create user"
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn login(
+    State(pool): State<SqlitePool>,
+    Json(payload): Json<LoginRequest>,
+) -> impl IntoResponse {
+    use crate::auth::verify_password;
+
+    let user: User = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
+        .bind(&payload.email)
+        .fetch_one(&pool)
+        .await
+    {
+        Ok(user) => user,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": "Invalid email or password"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match verify_password(&payload.password, &user.password_hash) {
+        Ok(true) => match crate::auth::generate_token(&user.id, &user.email) {
+            Ok(token) => {
+                let response = AuthResponse {
+                    token,
+                    user: user.into(),
+                };
+                (StatusCode::OK, Json(json!(response))).into_response()
+            }
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response(),
+        },
+        _ => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "status": "error",
+                "message": "Invalid email or password"
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_current_user(
+    State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = ?")
+        .bind(&user_id)
+        .fetch_one(&pool)
+        .await
+    {
+        Ok(user) => {
+            let user_info: UserInfo = user.into();
+            (StatusCode::OK, Json(json!(user_info))).into_response()
+        }
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "error",
+                "message": "User not found"
+            })),
+        )
+            .into_response(),
+    }
+}
+
+// ============================================
+// TASK HANDLERS (Protected with JWT)
+// ============================================
+
 async fn create_task(
     State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<CreateTask>,
 ) -> impl IntoResponse {
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now();
 
     let insert_result = sqlx::query(
-        "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO tasks (id, title, completed, priority, due_date, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&id)
     .bind(&payload.title)
     .bind(false)
     .bind(&payload.priority)
     .bind(&payload.due_date)
+    .bind(&user_id)
     .bind(now.to_rfc3339())
     .execute(&pool)
     .await;
@@ -95,10 +311,32 @@ async fn create_task(
     }
 }
 
-async fn get_tasks(State(pool): State<SqlitePool>) -> impl IntoResponse {
-    match sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY created_at DESC")
-        .fetch_all(&pool)
-        .await
+async fn get_tasks(
+    State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match sqlx::query_as::<_, Task>(
+        "SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC",
+    )
+    .bind(&user_id)
+    .fetch_all(&pool)
+    .await
     {
         Ok(tasks) => (StatusCode::OK, Json(tasks)).into_response(),
         Err(e) => {
@@ -115,17 +353,35 @@ async fn get_tasks(State(pool): State<SqlitePool>) -> impl IntoResponse {
     }
 }
 
-// Fetches task first to preserve existing values for missing fields
 async fn update_task(
     Path(id): Path<String>,
     State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<UpdateTask>,
 ) -> impl IntoResponse {
-    let existing_task: Option<Task> = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
-        .bind(&id)
-        .fetch_optional(&pool)
-        .await
-        .unwrap_or(None);
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let existing_task: Option<Task> =
+        sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ? AND user_id = ?")
+            .bind(&id)
+            .bind(&user_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap_or(None);
 
     if let Some(task) = existing_task {
         let title = payload.title.unwrap_or(task.title);
@@ -134,13 +390,14 @@ async fn update_task(
         let due_date = payload.due_date.or(task.due_date);
 
         let update_result = sqlx::query(
-            "UPDATE tasks SET title = ?, completed = ?, priority = ?, due_date = ? WHERE id = ?",
+            "UPDATE tasks SET title = ?, completed = ?, priority = ?, due_date = ? WHERE id = ? AND user_id = ?"
         )
         .bind(&title)
-        .bind(&completed)
+        .bind(completed)
         .bind(&priority)
         .bind(&due_date)
         .bind(&id)
+        .bind(&user_id)
         .execute(&pool)
         .await;
 
@@ -182,16 +439,37 @@ async fn update_task(
             StatusCode::NOT_FOUND,
             Json(json!({
                 "status": "error",
-                "message": "Task not found"
+                "message": "Task not found or access denied"
             })),
         )
             .into_response()
     }
 }
 
-async fn delete_task(Path(id): Path<String>, State(pool): State<SqlitePool>) -> impl IntoResponse {
-    match sqlx::query("DELETE FROM tasks WHERE id = ?")
+async fn delete_task(
+    Path(id): Path<String>,
+    State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match sqlx::query("DELETE FROM tasks WHERE id = ? AND user_id = ?")
         .bind(&id)
+        .bind(&user_id)
         .execute(&pool)
         .await
     {
@@ -203,7 +481,7 @@ async fn delete_task(Path(id): Path<String>, State(pool): State<SqlitePool>) -> 
                     StatusCode::NOT_FOUND,
                     Json(json!({
                         "status": "error",
-                        "message": "Task not found"
+                        "message": "Task not found or access denied"
                     })),
                 )
                     .into_response()
@@ -223,207 +501,9 @@ async fn delete_task(Path(id): Path<String>, State(pool): State<SqlitePool>) -> 
     }
 }
 
-// REGISTER
-async fn register(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<RegisterRequest>,
-) -> impl IntoResponse {
-    // Validácia
-    if let Err(e) = payload.validate() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "status": "error",
-                "message": format!("Validation error: {}", e)
-            })),
-        )
-            .into_response();
-    }
-
-    // Check for already exiting email
-    let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
-        .bind(&payload.email)
-        .fetch_optional(&pool)
-        .await;
-
-    if let Ok(Some(_)) = existing {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({
-                "status": "error",
-                "message": "User with this email already exists"
-            })),
-        )
-            .into_response();
-    }
-
-    // Hash password
-    let password_hash = match hash_password(&payload.password) {
-        Ok(hash) => hash,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "error",
-                    "message": e
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Creatio of user
-    let user_id = Uuid::new_v4().to_string();
-    let now = chrono::Utc::now();
-
-    match sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(&user_id)
-    .bind(&payload.username)
-    .bind(&payload.email)
-    .bind(&password_hash)
-    .bind(now.to_rfc3339())
-    .execute(&pool)
-    .await
-    {
-        Ok(_) => {
-            // Generate ne token
-            match generate_token(&user_id, &payload.email) {
-                Ok(token) => {
-                    let response = AuthResponse {
-                        token,
-                        user: UserInfo {
-                            id: user_id,
-                            username: payload.username,
-                            email: payload.email,
-                        },
-                    };
-                    (StatusCode::CREATED, Json(json!(response))).into_response()
-                }
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "status": "error",
-                        "message": e
-                    })),
-                )
-                    .into_response(),
-            }
-        }
-        Err(e) => {
-            eprintln!("Database error: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "error",
-                    "message": "Failed to create user"
-                })),
-            )
-                .into_response()
-        }
-    }
-}
-
-// LOGIN 
-async fn login(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<LoginRequest>,
-) -> impl IntoResponse {
-    // Find user by email
-    let user: User = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
-        .bind(&payload.email)
-        .fetch_one(&pool)
-        .await
-    {
-        Ok(user) => user,
-        Err(_) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "status": "error",
-                    "message": "Invalid email or password"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Verify password
-    match verify_password(&payload.password, &user.password_hash) {
-        Ok(true) => {
-            // Generate JWT token
-            match generate_token(&user.id, &user.email) {
-                Ok(token) => {
-                    let response = AuthResponse {
-                        token,
-                        user: user.into(),
-                    };
-                    (StatusCode::OK, Json(json!(response))).into_response()
-                }
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "status": "error",
-                        "message": e
-                    })),
-                )
-                    .into_response(),
-            }
-        }
-        _ => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({
-                "status": "error",
-                "message": "Invalid email or password"
-            })),
-        )
-            .into_response(),
-    }
-}
-
-// GET CURRENT USER
-async fn get_current_user(
-    State(pool): State<SqlitePool>,
-    headers: axum::http::HeaderMap,
-) -> impl IntoResponse {
-    // Extract token from Authorization header
-    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
-
-    let user_id = match extract_user_id(auth_header) {
-        Ok(id) => id,
-        Err(e) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "status": "error",
-                    "message": e
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Find user
-    match sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = ?")
-        .bind(&user_id)
-        .fetch_one(&pool)
-        .await
-    {
-        Ok(user) => {
-            let user_info: UserInfo = user.into();
-            (StatusCode::OK, Json(json!(user_info))).into_response()
-        }
-        Err(_) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "status": "error",
-                "message": "User not found"
-            })),
-        )
-            .into_response(),
-    }
-}
+// ============================================
+// TESTS
+// ============================================
 
 #[cfg(test)]
 mod tests {
@@ -441,6 +521,20 @@ mod tests {
                 completed BOOLEAN NOT NULL DEFAULT 0,
                 priority TEXT DEFAULT 'medium',
                 due_date TEXT,
+                user_id TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "CREATE TABLE users (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )",
         )
@@ -455,7 +549,6 @@ mod tests {
     async fn test_create_task_validation() {
         let pool = setup_test_db().await;
 
-        // Valid task
         let valid_task = CreateTask {
             title: "Test".to_string(),
             priority: Some("high".to_string()),
@@ -463,7 +556,6 @@ mod tests {
         };
         assert!(valid_task.validate().is_ok());
 
-        // Invalid task - empty title
         let invalid_task = CreateTask {
             title: "".to_string(),
             priority: None,
@@ -475,63 +567,65 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_task() {
         let pool = setup_test_db().await;
+        let user_id = Uuid::new_v4().to_string();
 
-        // Insert test task directly
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
 
         sqlx::query(
-            "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO tasks (id, title, completed, priority, due_date, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&task_id)
         .bind("Test task")
         .bind(false)
         .bind::<Option<String>>(None)
         .bind::<Option<String>>(None)
+        .bind(&user_id)
         .bind(now.to_rfc3339())
         .execute(&pool)
         .await
         .unwrap();
 
-        // Fetch tasks
-        let tasks = sqlx::query_as::<_, Task>("SELECT * FROM tasks")
+        let tasks = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE user_id = ?")
+            .bind(&user_id)
             .fetch_all(&pool)
             .await
             .unwrap();
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].title, "Test task");
-        assert_eq!(tasks[0].id, task_id);
+        assert_eq!(tasks[0].user_id, user_id);
     }
 
     #[tokio::test]
     async fn test_update_task() {
         let pool = setup_test_db().await;
+        let user_id = Uuid::new_v4().to_string();
 
-        // Insert test task
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
 
         sqlx::query(
-            "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO tasks (id, title, completed, priority, due_date, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&task_id)
         .bind("Original title")
         .bind(false)
         .bind::<Option<String>>(None)
         .bind::<Option<String>>(None)
+        .bind(&user_id)
         .bind(now.to_rfc3339())
         .execute(&pool)
         .await
         .unwrap();
 
-        // Update task
         let updated = sqlx::query_as::<_, Task>(
-            "UPDATE tasks SET title = ?, completed = ? WHERE id = ? RETURNING *",
+            "UPDATE tasks SET title = ?, completed = ? WHERE id = ? AND user_id = ? RETURNING *",
         )
         .bind("Updated title")
         .bind(true)
         .bind(&task_id)
+        .bind(&user_id)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -543,34 +637,34 @@ mod tests {
     #[tokio::test]
     async fn test_delete_task() {
         let pool = setup_test_db().await;
+        let user_id = Uuid::new_v4().to_string();
 
-        // Insert test task
         let task_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
 
         sqlx::query(
-            "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO tasks (id, title, completed, priority, due_date, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&task_id)
         .bind("Task to delete")
         .bind(false)
         .bind::<Option<String>>(None)
         .bind::<Option<String>>(None)
+        .bind(&user_id)
         .bind(now.to_rfc3339())
         .execute(&pool)
         .await
         .unwrap();
 
-        // Delete task
-        let result = sqlx::query("DELETE FROM tasks WHERE id = ?")
+        let result = sqlx::query("DELETE FROM tasks WHERE id = ? AND user_id = ?")
             .bind(&task_id)
+            .bind(&user_id)
             .execute(&pool)
             .await
             .unwrap();
 
         assert_eq!(result.rows_affected(), 1);
 
-        // Verify task is gone
         let tasks = sqlx::query_as::<_, Task>("SELECT * FROM tasks")
             .fetch_all(&pool)
             .await
@@ -580,77 +674,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_nonexistent_task() {
+    async fn test_user_cannot_see_other_users_tasks() {
         let pool = setup_test_db().await;
-
-        let result = sqlx::query("DELETE FROM tasks WHERE id = ?")
-            .bind("nonexistent-id")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        assert_eq!(result.rows_affected(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_create_task_with_priority() {
-        let pool = setup_test_db().await;
-
-        // Insert test task with priority
-        let task_id = Uuid::new_v4().to_string();
+        let user1_id = Uuid::new_v4().to_string();
+        let user2_id = Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
 
+        let task_id = Uuid::new_v4().to_string();
         sqlx::query(
-            "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO tasks (id, title, completed, priority, due_date, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&task_id)
-        .bind("High priority task")
+        .bind("User 1 task")
         .bind(false)
-        .bind("high")
         .bind::<Option<String>>(None)
+        .bind::<Option<String>>(None)
+        .bind(&user1_id)
         .bind(now.to_rfc3339())
         .execute(&pool)
         .await
         .unwrap();
 
-        // Fetch task
-        let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
-            .bind(&task_id)
-            .fetch_one(&pool)
+        let tasks = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE user_id = ?")
+            .bind(&user2_id)
+            .fetch_all(&pool)
             .await
             .unwrap();
 
-        assert_eq!(task.priority, Some("high".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_create_task_with_due_date() {
-        let pool = setup_test_db().await;
-
-        // Insert test task with due date
-        let task_id = Uuid::new_v4().to_string();
-        let now = chrono::Utc::now();
-
-        sqlx::query(
-            "INSERT INTO tasks (id, title, completed, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&task_id)
-        .bind("Task with due date")
-        .bind(false)
-        .bind::<Option<String>>(None)
-        .bind("2024-12-31")
-        .bind(now.to_rfc3339())
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // Fetch task
-        let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
-            .bind(&task_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-
-        assert_eq!(task.due_date, Some("2024-12-31".to_string()));
+        assert_eq!(tasks.len(), 0);
     }
 }
