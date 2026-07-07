@@ -92,18 +92,21 @@ const TaskList: React.FC = () => {
   };
 
   const handleAddTask = async (e: React.FormEvent): Promise<void> => {
-    e.preventDefault();
-    const trimmedTitle = newTask.trim();
-    if (!trimmedTitle) return;
+      e.preventDefault();
+      const trimmedTitle = newTask.trim();
+      if (!trimmedTitle) return;
 
-    try {
-      const taskData: CreateTaskDto = { title: trimmedTitle };
-      const newTaskData = await createTask(taskData);
-      setTasks([newTaskData, ...tasks]);
-      setNewTask('');
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
+      try {
+	  const taskData: CreateTaskDto = { 
+	      title: trimmedTitle,
+	      priority: 'medium'
+	  };
+	  const newTaskData = await createTask(taskData);
+	  setTasks([newTaskData, ...tasks]);
+	  setNewTask('');
+      } catch (err) {
+	  setError(getErrorMessage(err));
+      }
   };
 
   const handleToggleTask = async (taskId: string): Promise<void> => {
