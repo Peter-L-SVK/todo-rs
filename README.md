@@ -370,7 +370,8 @@ npx tsc --noEmit  # Type check
 
 ## Roadmap
 
-- [ ] Isolated per user tasks 
+- [x] Isolated per user tasks
+- [ ] React-admin landing page
 - [ ] Password reset functionality
 - [ ] Email verification
 - [ ] User profile management
