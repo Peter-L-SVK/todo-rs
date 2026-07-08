@@ -96,7 +96,7 @@ sqlite3 todo.db "VACUUM;"
 sqlx migrate run
 
 # Start the server
-cargo run
+cargo run --release --bin backend
 # Server: http://localhost:8000
 ```
 
@@ -367,10 +367,11 @@ VITE_API_URL=http://localhost:8000
 
 ### Backend
 ```bash
-cargo run              # Run server
-cargo build --release  # Build release
-cargo test             # Run tests
-sqlx migrate run       # Run migrations
+cargo run --release --bin backend     # Run server
+cargo build --release --bin backend   # Build release
+cargo test                            # Run tests
+sqlite3 todo.db "VACUUM;"             # Create empty db
+sqlx migrate run                      # Run migrations
 ```
 
 ### Frontend
@@ -398,6 +399,7 @@ The application includes a full admin panel built with React Admin:
 
 ```bash
 cd backend
+cargo run --bin generate_hash
 sqlite3 todo.db
 
 # Create admin user (password: admin123)
