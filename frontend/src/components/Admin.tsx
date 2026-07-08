@@ -26,7 +26,6 @@ import {
 } from "react-admin";
 import { dataProviderFactory } from "../api/adminDataProvider";
 import { getCurrentUser, removeAuthToken, getAuthToken } from "../api/authApi";
-import AdminLogin from "./AdminLogin";
 import { Link } from "react-router-dom";
 import "./Admin.css";
 
