@@ -5,9 +5,51 @@
  * Feel free to share and modify
  *
  */
- 
+
 .app {
   width: 100%;
-  max-width: 600px;
+  max-width: 1200px;
   margin: 0 auto;
+}
+
+.app-nav {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 12px;
+  margin-bottom: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.app-nav a {
+  color: #333;
+  text-decoration: none;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.app-nav a:hover {
+  background: #e9ecef;
+}
+
+.app-nav a.active {
+  background: #4caf50;
+  color: white;
+}
+
+/* Skryjeme Admin Panel, pokiaľ nie sme na ceste /admin */
+.admin-panel-wrapper {
+  display: none;
+}
+
+/* Ak je URL /admin, zobrazíme Admin Panel a skryjeme hlavný obsah */
+body:has(.admin-panel-wrapper:target) .main-content {
+  display: none;
+}
+
+body:has(.admin-panel-wrapper:target) .admin-panel-wrapper {
+  display: block;
 }

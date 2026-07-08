@@ -12,5 +12,6 @@ CREATE TABLE users (
     username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
     created_at TEXT NOT NULL
 );

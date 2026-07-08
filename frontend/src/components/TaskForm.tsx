@@ -6,7 +6,7 @@
  *
  */
 
-import React from 'react';
+import React from "react";
 
 interface TaskFormProps {
   newTask: string;
@@ -14,10 +14,10 @@ interface TaskFormProps {
   handleAddTask: (e: React.FormEvent) => void;
 }
 
-const TaskForm: React.FC<TaskFormProps> = ({ 
-  newTask, 
-  setNewTask, 
-  handleAddTask 
+const TaskForm: React.FC<TaskFormProps> = ({
+  newTask,
+  setNewTask,
+  handleAddTask,
 }) => {
   return (
     <form onSubmit={handleAddTask} className="task-form">

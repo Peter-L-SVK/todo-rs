@@ -5,7 +5,7 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/Peter-L-SVK/todo-rs)](https://github.com/Peter-L-SVK/todo-rs/releases/latest)
 [![GitHub last commit](https://img.shields.io/github/last-commit/Peter-L-SVK/todo-rs)](https://github.com/Peter-L-SVK/todo-rs/commits/main)
 
-Full-stack todo application with Rust (Axum) backend and React TypeScript frontend and Sqlite3 as database.
+Full-stack todo application with Rust (Axum) backend and React TypeScript frontend with Sqlite3 database.
 This project serves as learning example and demo for new devs.
 
 ![ToDo demo](demo.png) 
@@ -20,6 +20,8 @@ This project serves as learning example and demo for new devs.
 - Inline editing (double-click or edit button)
 - User authentication (Register/Login)
 - JWT token-based authentication
+- Admin panel with React Admin
+- Admin-only access to all tasks and users
 - CSRF protection
 - SQLite database
 - Responsive design
@@ -28,7 +30,7 @@ This project serves as learning example and demo for new devs.
 
 **Backend:** Rust, Axum, Tokio, SQLx, SQLite, Serde, UUID, Chrono, Validator, Argon2, JSON Web Token
 
-**Frontend:** React 19, TypeScript 5.5, Vite 6.3, Axios, React Icons
+**Frontend:** React 19, TypeScript 5.5, Vite 6.3, Axios, React Icons, React Admin, Material UI
 
 ## Project Structure
 
@@ -52,15 +54,22 @@ todo-app-rs/
     ├── src/
     │   ├── api/
     │   │   ├── tasksApi.ts  # Task API calls
-    │   │   └── authApi.ts   # Authentication API calls
+    │   │   ├── authApi.ts   # Authentication API calls
+    │   │   └── adminDataProvider.ts  # React Admin data provider
     │   ├── components/
+    │   │   ├── admin/       # Admin panel components
+    │   │   │   ├── Dashboard.tsx
+    │   │   │   ├── TaskList.tsx
+    │   │   │   ├── TaskEdit.tsx
+    │   │   │   └── UserList.tsx
     │   │   ├── TaskList.tsx
     │   │   ├── TaskForm.tsx
     │   │   ├── TaskItem.tsx
     │   │   ├── TaskFilters.tsx
     │   │   ├── TasksContainer.tsx
     │   │   ├── Login.tsx
-    │   │   └── Register.tsx
+    │   │   ├── Register.tsx
+    │   │   └── Admin.tsx
     │   ├── types/
     │   │   └── task.types.ts
     │   ├── App.tsx
@@ -119,10 +128,18 @@ npm run dev
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/csrf` | Get CSRF token |
-| GET | `/api/tasks` | Get all tasks |
+| GET | `/api/tasks` | Get user's tasks |
 | POST | `/api/tasks` | Create task |
 | PATCH | `/api/tasks/{id}` | Update task |
 | DELETE | `/api/tasks/{id}` | Delete task |
+
+### Admin (requires admin role)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/tasks` | Get all tasks from all users |
+| GET | `/api/admin/users` | Get all users |
+| GET | `/api/users` | Get all users (React Admin) |
 
 ### Data Models
 
@@ -134,6 +151,7 @@ Task {
   completed: boolean
   priority?: "low" | "medium" | "high"
   due_date?: string  // YYYY-MM-DD
+  user_id: string
   created_at: number
 }
 
@@ -142,6 +160,7 @@ User {
   id: string
   username: string
   email: string
+  role: "user" | "admin"
 }
 
 // Authentication
@@ -306,11 +325,10 @@ CREATE TABLE tasks (
     completed BOOLEAN DEFAULT 0,
     priority TEXT DEFAULT 'medium',
     due_date TEXT,
+    user_id TEXT NOT NULL,
     created_at TEXT NOT NULL
-	user_id TEXT NOT NULL DEFAULT
 );
 
--- Create index for faster user-specific queries
 CREATE INDEX idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX idx_tasks_completed ON tasks(completed);
 CREATE INDEX idx_tasks_priority ON tasks(priority);
@@ -324,6 +342,7 @@ CREATE TABLE users (
     username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
     created_at TEXT NOT NULL
 );
 
@@ -364,6 +383,35 @@ npm run lint      # Run ESLint
 npx tsc --noEmit  # Type check
 ```
 
+## Admin Panel
+
+The application includes a full admin panel built with React Admin:
+
+- Accessible at `/admin` (only for users with `admin` role)
+- Manage all tasks from all users
+- Manage all users
+- Dashboard with statistics
+- Auto-hide navigation bar on scroll
+- Dark theme matching the application style
+
+### Creating an Admin User
+
+```bash
+cd backend
+sqlite3 todo.db
+
+# Create admin user (password: admin123)
+INSERT INTO users (id, username, email, password_hash, role, created_at) 
+VALUES (
+    'admin-001',
+    'admin',
+    'admin@example.com',
+    '$argon2id$v=19$m=4096,t=3,p=1$...',  # Use your generated hash
+    'admin',
+    datetime('now')
+);
+```
+
 ## Security Features
 
 - **JWT Authentication** - Stateless token-based authentication
@@ -371,11 +419,12 @@ npx tsc --noEmit  # Type check
 - **CSRF Protection** - Prevents cross-site request forgery
 - **CORS Configuration** - Secure frontend-backend communication
 - **Input Validation** - Server-side validation for all inputs
+- **Role-based Access Control** - Admin-only endpoints and UI
 
 ## Roadmap
 
 - [x] Isolated per user tasks
-- [ ] React-admin landing page
+- [x] React-admin integration
 - [ ] Password reset functionality
 - [ ] Email verification
 - [ ] User profile management
@@ -413,5 +462,6 @@ MIT License - See [LICENSE](LICENSE) for details.
 - [React](https://reactjs.org/) - UI library
 - [TypeScript](https://www.typescriptlang.org/) - Typed JavaScript
 - [Vite](https://vitejs.dev/) - Build tool
+- [React Admin](https://marmelab.com/react-admin/) - Admin panel framework
 
 ---

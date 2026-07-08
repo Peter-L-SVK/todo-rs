@@ -17,25 +17,42 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
 };
 use axum_csrf::CsrfToken;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 use validator::Validate;
 
+// ============================================
+// ROUTER SETUP
+// ============================================
+
 pub fn create_router(pool: SqlitePool) -> Router {
     Router::new()
+        // Task endpoints
         .route("/api/tasks", get(get_tasks).post(create_task))
         .route("/api/tasks/{id}", patch(update_task).delete(delete_task))
+        // CSRF token endpoint
         .route("/api/csrf", get(get_csrf_token))
+        // Authentication endpoints
         .route("/api/auth/register", post(register))
         .route("/api/auth/login", post(login))
         .route("/api/auth/me", get(get_current_user))
+        // Admin endpoints
+        .route("/api/admin/users", get(get_all_users))
+        .route("/api/admin/tasks", get(get_all_tasks_admin))
+        // Public users endpoint (admin only)
+        .route("/api/users", get(get_users))
         .with_state(pool)
 }
 
+// ============================================
+// CSRF TOKEN
+// ============================================
+
+/// Returns a CSRF token for the frontend
 #[axum::debug_handler]
 async fn get_csrf_token(token: CsrfToken) -> (StatusCode, Json<Value>) {
     let token_value = token.authenticity_token().unwrap_or_default();
@@ -43,15 +60,17 @@ async fn get_csrf_token(token: CsrfToken) -> (StatusCode, Json<Value>) {
 }
 
 // ============================================
-// AUTH HANDLERS
+// AUTHENTICATION HANDLERS
 // ============================================
 
+/// Register a new user
 async fn register(
     State(pool): State<SqlitePool>,
     Json(payload): Json<RegisterRequest>,
 ) -> impl IntoResponse {
     use crate::auth::hash_password;
 
+    // Validate input
     if let Err(e) = payload.validate() {
         return (
             StatusCode::BAD_REQUEST,
@@ -63,6 +82,7 @@ async fn register(
             .into_response();
     }
 
+    // Check if email already exists
     let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
         .bind(&payload.email)
         .fetch_optional(&pool)
@@ -79,6 +99,7 @@ async fn register(
             .into_response();
     }
 
+    // Hash password
     let password_hash = match hash_password(&payload.password) {
         Ok(hash) => hash,
         Err(e) => {
@@ -96,13 +117,15 @@ async fn register(
     let user_id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now();
 
+    // Insert user into database
     match sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(&user_id)
     .bind(&payload.username)
     .bind(&payload.email)
     .bind(&password_hash)
+    .bind("user") // Default role for new users
     .bind(now.to_rfc3339())
     .execute(&pool)
     .await
@@ -115,6 +138,7 @@ async fn register(
                         id: user_id,
                         username: payload.username,
                         email: payload.email,
+                        role: "user".to_string(),
                     },
                 };
                 (StatusCode::CREATED, Json(json!(response))).into_response()
@@ -142,12 +166,14 @@ async fn register(
     }
 }
 
+/// Login user and return JWT token
 async fn login(
     State(pool): State<SqlitePool>,
     Json(payload): Json<LoginRequest>,
 ) -> impl IntoResponse {
     use crate::auth::verify_password;
 
+    // Find user by email
     let user: User = match sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
         .bind(&payload.email)
         .fetch_one(&pool)
@@ -166,6 +192,7 @@ async fn login(
         }
     };
 
+    // Verify password
     match verify_password(&payload.password, &user.password_hash) {
         Ok(true) => match crate::auth::generate_token(&user.id, &user.email) {
             Ok(token) => {
@@ -195,6 +222,7 @@ async fn login(
     }
 }
 
+/// Get current authenticated user
 async fn get_current_user(
     State(pool): State<SqlitePool>,
     headers: axum::http::HeaderMap,
@@ -239,6 +267,7 @@ async fn get_current_user(
 // TASK HANDLERS (Protected with JWT)
 // ============================================
 
+/// Create a new task for the authenticated user
 async fn create_task(
     State(pool): State<SqlitePool>,
     headers: axum::http::HeaderMap,
@@ -263,6 +292,7 @@ async fn create_task(
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now();
 
+    // Insert task with user_id
     let insert_result = sqlx::query(
         "INSERT INTO tasks (id, title, completed, priority, due_date, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
@@ -278,6 +308,7 @@ async fn create_task(
 
     match insert_result {
         Ok(_) => {
+            // Fetch created task
             match sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
                 .bind(&id)
                 .fetch_one(&pool)
@@ -311,6 +342,7 @@ async fn create_task(
     }
 }
 
+/// Get all tasks for the authenticated user
 async fn get_tasks(
     State(pool): State<SqlitePool>,
     headers: axum::http::HeaderMap,
@@ -331,6 +363,7 @@ async fn get_tasks(
         }
     };
 
+    // Only fetch tasks belonging to this user
     match sqlx::query_as::<_, Task>(
         "SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC",
     )
@@ -353,6 +386,7 @@ async fn get_tasks(
     }
 }
 
+/// Update a task (must belong to the authenticated user)
 async fn update_task(
     Path(id): Path<String>,
     State(pool): State<SqlitePool>,
@@ -375,6 +409,7 @@ async fn update_task(
         }
     };
 
+    // Verify task exists and belongs to user
     let existing_task: Option<Task> =
         sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ? AND user_id = ?")
             .bind(&id)
@@ -389,6 +424,7 @@ async fn update_task(
         let priority = payload.priority.or(task.priority);
         let due_date = payload.due_date.or(task.due_date);
 
+        // Update task
         let update_result = sqlx::query(
             "UPDATE tasks SET title = ?, completed = ?, priority = ?, due_date = ? WHERE id = ? AND user_id = ?"
         )
@@ -403,6 +439,7 @@ async fn update_task(
 
         match update_result {
             Ok(_) => {
+                // Fetch updated task
                 match sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = ?")
                     .bind(&id)
                     .fetch_one(&pool)
@@ -446,6 +483,7 @@ async fn update_task(
     }
 }
 
+/// Delete a task (must belong to the authenticated user)
 async fn delete_task(
     Path(id): Path<String>,
     State(pool): State<SqlitePool>,
@@ -467,6 +505,7 @@ async fn delete_task(
         }
     };
 
+    // Delete task only if it belongs to user
     match sqlx::query("DELETE FROM tasks WHERE id = ? AND user_id = ?")
         .bind(&id)
         .bind(&user_id)
@@ -497,6 +536,147 @@ async fn delete_task(
                 })),
             )
                 .into_response()
+        }
+    }
+}
+
+// ============================================
+// ADMIN HANDLERS
+// ============================================
+
+/// Check if a user has admin role
+async fn is_admin(user_id: &str, pool: &SqlitePool) -> bool {
+    let result: Option<String> = sqlx::query_scalar("SELECT role FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+
+    match result {
+        Some(role) => role == "admin",
+        None => false,
+    }
+}
+
+/// Get all users (admin only)
+async fn get_all_users(
+    State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let auth_header = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (StatusCode::UNAUTHORIZED, Json(json!({
+                "status": "error",
+                "message": e
+            }))).into_response();
+        }
+    };
+
+    if !is_admin(&user_id, &pool).await {
+        return (StatusCode::FORBIDDEN, Json(json!({
+            "status": "error",
+            "message": "Admin access required"
+        }))).into_response();
+    }
+
+    match sqlx::query_as::<_, UserInfo>("SELECT id, username, email, role FROM users")
+        .fetch_all(&pool)
+        .await
+    {
+        Ok(users) => (StatusCode::OK, Json(users)).into_response(),
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "status": "error",
+                "message": "Failed to fetch users"
+            }))).into_response()
+        }
+    }
+}
+
+/// Get all tasks from all users (admin only)
+async fn get_all_tasks_admin(
+    State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let auth_header = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (StatusCode::UNAUTHORIZED, Json(json!({
+                "status": "error",
+                "message": e
+            }))).into_response();
+        }
+    };
+
+    if !is_admin(&user_id, &pool).await {
+        return (StatusCode::FORBIDDEN, Json(json!({
+            "status": "error",
+            "message": "Admin access required"
+        }))).into_response();
+    }
+
+    match sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY created_at DESC")
+        .fetch_all(&pool)
+        .await
+    {
+        Ok(tasks) => (StatusCode::OK, Json(tasks)).into_response(),
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "status": "error",
+                "message": "Failed to fetch all tasks"
+            }))).into_response()
+        }
+    }
+}
+
+/// Get all users (admin only) - used by React Admin
+async fn get_users(
+    State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let auth_header = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
+
+    let user_id = match extract_user_id(auth_header) {
+        Ok(id) => id,
+        Err(e) => {
+            return (StatusCode::UNAUTHORIZED, Json(json!({
+                "status": "error",
+                "message": e
+            }))).into_response();
+        }
+    };
+
+    if !is_admin(&user_id, &pool).await {
+        return (StatusCode::FORBIDDEN, Json(json!({
+            "status": "error",
+            "message": "Admin access required"
+        }))).into_response();
+    }
+
+    match sqlx::query_as::<_, UserInfo>("SELECT id, username, email, role FROM users ORDER BY created_at DESC")
+        .fetch_all(&pool)
+        .await
+    {
+        Ok(users) => (StatusCode::OK, Json(users)).into_response(),
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "status": "error",
+                "message": "Failed to fetch users"
+            }))).into_response()
         }
     }
 }
@@ -535,6 +715,7 @@ mod tests {
                 username TEXT NOT NULL UNIQUE,
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
                 created_at TEXT NOT NULL
             )",
         )

@@ -13,6 +13,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use validator::Validate;
 
+// ============================================
+// TASK MODELS
+// ============================================
+
+/// Main Task entity - represents a todo item in the database
 #[derive(Debug, Serialize, Deserialize, FromRow, Validate, Clone)]
 pub struct Task {
     pub id: String,
@@ -21,11 +26,12 @@ pub struct Task {
     pub completed: bool,
     pub priority: Option<String>,
     pub due_date: Option<String>,
-    pub user_id: String, // NEW - links task to user
+    pub user_id: String,  // Foreign key to User
     #[serde(with = "chrono::serde::ts_seconds")]
     pub created_at: DateTime<Utc>,
 }
 
+/// DTO for creating a new task - client provides title only
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateTask {
     #[validate(length(min = 1, max = 100))]
@@ -33,10 +39,9 @@ pub struct CreateTask {
     #[validate(length(min = 1, max = 10))]
     pub priority: Option<String>,
     pub due_date: Option<String>,
-    // user_id is added by backend from JWT, not by client
 }
 
-// All fields optional for partial updates (PATCH)
+/// DTO for updating a task - all fields optional for partial updates
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpdateTask {
     #[validate(length(min = 1, max = 100))]
@@ -46,6 +51,11 @@ pub struct UpdateTask {
     pub due_date: Option<String>,
 }
 
+// ============================================
+// API RESPONSE WRAPPER
+// ============================================
+
+/// Generic API response wrapper for consistent error handling
 #[derive(Debug, Serialize)]
 pub struct ApiResponse<T> {
     pub status: &'static str,
@@ -73,6 +83,11 @@ impl<T> ApiResponse<T> {
     }
 }
 
+// ============================================
+// USER MODELS
+// ============================================
+
+/// User entity - stored in the database with hashed password
 #[derive(Debug, Serialize, Deserialize, FromRow, Validate, Clone)]
 pub struct User {
     pub id: String,
@@ -80,11 +95,13 @@ pub struct User {
     pub username: String,
     #[validate(email)]
     pub email: String,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing)]  // Never send password hash to client
     pub password_hash: String,
+    pub role: String,  // 'user' or 'admin'
     pub created_at: DateTime<Utc>,
 }
 
+/// DTO for user registration
 #[derive(Debug, Deserialize, Validate)]
 pub struct RegisterRequest {
     #[validate(length(min = 3, max = 50))]
@@ -95,23 +112,27 @@ pub struct RegisterRequest {
     pub password: String,
 }
 
+/// DTO for user login
 #[derive(Debug, Deserialize, Validate)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
 
+/// Response after successful authentication
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
     pub user: UserInfo,
 }
 
-#[derive(Debug, Serialize)]
+/// Public user information (safe to expose)
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct UserInfo {
     pub id: String,
     pub username: String,
     pub email: String,
+    pub role: String,
 }
 
 impl From<User> for UserInfo {
@@ -120,16 +141,26 @@ impl From<User> for UserInfo {
             id: user.id,
             username: user.username,
             email: user.email,
+            role: user.role,
         }
     }
 }
 
+// ============================================
+// JWT CLAIMS
+// ============================================
+
+/// JWT claims structure for token generation and validation
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String, // user_id
-    pub email: String,
-    pub exp: usize, // expiration timestamp
+    pub sub: String,        // User ID (subject)
+    pub email: String,      // User email
+    pub exp: usize,         // Expiration timestamp (UNIX epoch)
 }
+
+// ============================================
+// TESTS
+// ============================================
 
 #[cfg(test)]
 mod tests {

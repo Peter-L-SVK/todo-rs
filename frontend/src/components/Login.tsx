@@ -6,9 +6,9 @@
  *
  */
 
-import React, { useState } from 'react';
-import { login, setAuthToken } from '../api/authApi';
-import { AxiosError } from 'axios';
+import React, { useState } from "react";
+import { login, setAuthToken } from "../api/authApi";
+import { AxiosError } from "axios";
 
 interface LoginProps {
   onLogin: () => void;
@@ -20,14 +20,14 @@ interface ErrorResponse {
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin, onSwitchToRegister }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
@@ -36,7 +36,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onSwitchToRegister }) => {
       onLogin();
     } catch (err) {
       const error = err as AxiosError<ErrorResponse>;
-      setError(error.response?.data?.message || 'Login failed');
+      setError(error.response?.data?.message || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -47,31 +47,33 @@ const Login: React.FC<LoginProps> = ({ onLogin, onSwitchToRegister }) => {
   };
 
   return (
-    <div className="auth-container">
-      <h2>Login</h2>
-      <form onSubmit={handleSubmit} className="auth-form">
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error && <div className="auth-error">{error}</div>}
-        <button type="submit" disabled={loading}>
-          {loading ? 'Loading...' : 'Login'}
-        </button>
-        <button type="button" onClick={onSwitch}>
-          Create Account
-        </button>
-      </form>
+    <div className="auth-wrapper">
+      <div className="auth-container">
+        <h2>Login</h2>
+        <form onSubmit={handleSubmit} className="auth-form">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          {error && <div className="auth-error">{error}</div>}
+          <button type="submit" disabled={loading}>
+            {loading ? "Loading..." : "Login"}
+          </button>
+          <button type="button" onClick={onSwitch}>
+            Create Account
+          </button>
+        </form>
+      </div>
     </div>
   );
 };

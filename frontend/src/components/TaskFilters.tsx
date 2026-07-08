@@ -6,8 +6,8 @@
  *
  */
 
-import React from 'react';
-import { FilterType } from '@/types/task.types';
+import React from "react";
+import { FilterType } from "@/types/task.types";
 
 interface TaskFiltersProps {
   currentFilter: FilterType;
@@ -16,16 +16,16 @@ interface TaskFiltersProps {
   activeCount: number;
 }
 
-const TaskFilters: React.FC<TaskFiltersProps> = ({ 
-  currentFilter, 
-  onFilterChange, 
+const TaskFilters: React.FC<TaskFiltersProps> = ({
+  currentFilter,
+  onFilterChange,
   tasksCount,
-  activeCount 
+  activeCount,
 }) => {
   const filters: { value: FilterType; label: string }[] = [
-    { value: 'all', label: `All (${tasksCount})` },
-    { value: 'active', label: `Active (${activeCount})` },
-    { value: 'completed', label: `Completed (${tasksCount - activeCount})` }
+    { value: "all", label: `All (${tasksCount})` },
+    { value: "active", label: `Active (${activeCount})` },
+    { value: "completed", label: `Completed (${tasksCount - activeCount})` },
   ];
 
   return (
@@ -33,7 +33,7 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({
       {filters.map(({ value, label }) => (
         <button
           key={value}
-          className={`filter-btn ${currentFilter === value ? 'active' : ''}`}
+          className={`filter-btn ${currentFilter === value ? "active" : ""}`}
           onClick={() => onFilterChange(value)}
         >
           {label}

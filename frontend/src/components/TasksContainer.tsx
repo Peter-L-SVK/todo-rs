@@ -6,9 +6,9 @@
  *
  */
 
-import React from 'react';
-import { Task } from '@/types/task.types';
-import TaskItem from './TaskItem';
+import React from "react";
+import { Task } from "@/types/task.types";
+import TaskItem from "./TaskItem";
 
 interface TasksContainerProps {
   tasks: Task[];
@@ -17,16 +17,16 @@ interface TasksContainerProps {
   onUpdate?: (task: Task) => void;
 }
 
-const TasksContainer: React.FC<TasksContainerProps> = ({ 
-  tasks, 
-  onToggle, 
+const TasksContainer: React.FC<TasksContainerProps> = ({
+  tasks,
+  onToggle,
   onDelete,
-  onUpdate
+  onUpdate,
 }) => {
   return (
     <ul className="task-list">
       {tasks.length > 0 ? (
-        tasks.map(task => (
+        tasks.map((task) => (
           <TaskItem
             key={task.id}
             task={task}

@@ -1,8 +1,16 @@
 /* src/components/Auth.css */
 
+.auth-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 70vh;
+  padding: 20px;
+}
+
 .auth-container {
   max-width: 400px;
-  margin: 60px auto;
+  width: 100%;
   padding: 30px;
   background: white;
   border-radius: 12px;
@@ -32,12 +40,12 @@
 }
 
 .auth-form input:focus {
-  border-color: #4CAF50;
+  border-color: #4caf50;
 }
 
 .auth-form button[type="submit"] {
   padding: 12px;
-  background: #4CAF50;
+  background: #4caf50;
   color: white;
   border: none;
   border-radius: 8px;
@@ -67,7 +75,7 @@
 }
 
 .auth-form button[type="button"]:hover {
-  color: #4CAF50;
+  color: #4caf50;
 }
 
 .auth-error {
@@ -77,4 +85,16 @@
   border-radius: 6px;
   font-size: 14px;
   text-align: center;
+}
+
+/* Responsiveness */
+@media (max-width: 480px) {
+  .auth-wrapper {
+    min-height: 60vh;
+    padding: 10px;
+  }
+
+  .auth-container {
+    padding: 20px;
+  }
 }

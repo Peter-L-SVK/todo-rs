@@ -6,9 +6,9 @@
  *
  */
 
-import React, { useState } from 'react';
-import { register, setAuthToken } from '../api/authApi';
-import { AxiosError } from 'axios';
+import React, { useState } from "react";
+import { register, setAuthToken } from "../api/authApi";
+import { AxiosError } from "axios";
 
 interface RegisterProps {
   onRegister: () => void;
@@ -20,24 +20,24 @@ interface ErrorResponse {
 }
 
 const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchToLogin }) => {
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       return;
     }
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setError("Password must be at least 8 characters");
       return;
     }
 
@@ -49,7 +49,7 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchToLogin }) => {
       onRegister();
     } catch (err) {
       const error = err as AxiosError<ErrorResponse>;
-      setError(error.response?.data?.message || 'Registration failed');
+      setError(error.response?.data?.message || "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -95,7 +95,7 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchToLogin }) => {
         />
         {error && <div className="auth-error">{error}</div>}
         <button type="submit" disabled={loading}>
-          {loading ? 'Loading...' : 'Register'}
+          {loading ? "Loading..." : "Register"}
         </button>
         <button type="button" onClick={onSwitch}>
           Already have an account? Login

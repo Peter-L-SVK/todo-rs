@@ -1,0 +1,114 @@
+/* src/components/Admin.css */
+
+/* Admin container - full width, no padding */
+.admin-container {
+  padding: 0;
+  max-width: 100%;
+  margin: 0;
+}
+
+/* Hide original header - we use custom AppBar instead */
+.admin-header {
+  display: none;
+}
+
+/* Loading state */
+.admin-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  font-size: 18px;
+  color: #666;
+}
+
+/* Admin panel wrapper */
+.admin-panel-wrapper {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-panel-wrapper .admin-container {
+  max-width: 100%;
+}
+
+/* ============================================
+   COMPACT ADMIN APP BAR
+   ============================================ */
+
+.admin-appbar-compact .MuiAppBar-root {
+  background-color: #1a1a2e !important;
+  box-shadow: none !important;
+  min-height: 40px !important;
+}
+
+.admin-appbar-compact .MuiToolbar-root {
+  min-height: 40px !important;
+  padding: 0 12px !important;
+}
+
+.admin-appbar-compact .MuiTypography-root {
+  font-size: 14px !important;
+}
+
+/* ============================================
+   AUTO-HIDE APP BAR TRANSITIONS
+   ============================================ */
+
+.admin-appbar {
+  transition: transform 0.3s ease-in-out;
+}
+
+.admin-appbar-hidden {
+  transform: translateY(-100%);
+}
+
+.admin-appbar-visible {
+  transform: translateY(0);
+}
+
+/* ============================================
+   BACK TO APP BUTTON
+   ============================================ */
+
+.back-to-app-btn {
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  font-size: 13px;
+  transition: color 0.2s;
+}
+
+.back-to-app-btn:hover {
+  color: #ffffff;
+}
+
+/* ============================================
+   LOGOUT BUTTON
+   ============================================ */
+
+.admin-logout-btn {
+  padding: 4px 14px;
+  background: rgba(220, 53, 69, 0.85);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+
+.admin-logout-btn:hover {
+  background: #dc3545;
+}
+
+/* ============================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================ */
+
+@media (max-width: 768px) {
+  .admin-container {
+    padding: 0;
+  }
+}
