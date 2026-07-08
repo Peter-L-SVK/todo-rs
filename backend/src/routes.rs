@@ -20,7 +20,7 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use axum_csrf::CsrfToken;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 use validator::Validate;
@@ -563,25 +563,31 @@ async fn get_all_users(
     State(pool): State<SqlitePool>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    let auth_header = headers
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok());
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
 
     let user_id = match extract_user_id(auth_header) {
         Ok(id) => id,
         Err(e) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({
-                "status": "error",
-                "message": e
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
         }
     };
 
     if !is_admin(&user_id, &pool).await {
-        return (StatusCode::FORBIDDEN, Json(json!({
-            "status": "error",
-            "message": "Admin access required"
-        }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "status": "error",
+                "message": "Admin access required"
+            })),
+        )
+            .into_response();
     }
 
     match sqlx::query_as::<_, UserInfo>("SELECT id, username, email, role FROM users")
@@ -591,10 +597,14 @@ async fn get_all_users(
         Ok(users) => (StatusCode::OK, Json(users)).into_response(),
         Err(e) => {
             eprintln!("Database error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "status": "error",
-                "message": "Failed to fetch users"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to fetch users"
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -604,25 +614,31 @@ async fn get_all_tasks_admin(
     State(pool): State<SqlitePool>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    let auth_header = headers
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok());
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
 
     let user_id = match extract_user_id(auth_header) {
         Ok(id) => id,
         Err(e) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({
-                "status": "error",
-                "message": e
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
         }
     };
 
     if !is_admin(&user_id, &pool).await {
-        return (StatusCode::FORBIDDEN, Json(json!({
-            "status": "error",
-            "message": "Admin access required"
-        }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "status": "error",
+                "message": "Admin access required"
+            })),
+        )
+            .into_response();
     }
 
     match sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY created_at DESC")
@@ -632,10 +648,14 @@ async fn get_all_tasks_admin(
         Ok(tasks) => (StatusCode::OK, Json(tasks)).into_response(),
         Err(e) => {
             eprintln!("Database error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "status": "error",
-                "message": "Failed to fetch all tasks"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to fetch all tasks"
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -645,38 +665,50 @@ async fn get_users(
     State(pool): State<SqlitePool>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    let auth_header = headers
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok());
+    let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok());
 
     let user_id = match extract_user_id(auth_header) {
         Ok(id) => id,
         Err(e) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({
-                "status": "error",
-                "message": e
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": e
+                })),
+            )
+                .into_response();
         }
     };
 
     if !is_admin(&user_id, &pool).await {
-        return (StatusCode::FORBIDDEN, Json(json!({
-            "status": "error",
-            "message": "Admin access required"
-        }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "status": "error",
+                "message": "Admin access required"
+            })),
+        )
+            .into_response();
     }
 
-    match sqlx::query_as::<_, UserInfo>("SELECT id, username, email, role FROM users ORDER BY created_at DESC")
-        .fetch_all(&pool)
-        .await
+    match sqlx::query_as::<_, UserInfo>(
+        "SELECT id, username, email, role FROM users ORDER BY created_at DESC",
+    )
+    .fetch_all(&pool)
+    .await
     {
         Ok(users) => (StatusCode::OK, Json(users)).into_response(),
         Err(e) => {
             eprintln!("Database error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "status": "error",
-                "message": "Failed to fetch users"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": "Failed to fetch users"
+                })),
+            )
+                .into_response()
         }
     }
 }

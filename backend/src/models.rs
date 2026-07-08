@@ -26,7 +26,7 @@ pub struct Task {
     pub completed: bool,
     pub priority: Option<String>,
     pub due_date: Option<String>,
-    pub user_id: String,  // Foreign key to User
+    pub user_id: String, // Foreign key to User
     #[serde(with = "chrono::serde::ts_seconds")]
     pub created_at: DateTime<Utc>,
 }
@@ -95,9 +95,9 @@ pub struct User {
     pub username: String,
     #[validate(email)]
     pub email: String,
-    #[serde(skip_serializing)]  // Never send password hash to client
+    #[serde(skip_serializing)] // Never send password hash to client
     pub password_hash: String,
-    pub role: String,  // 'user' or 'admin'
+    pub role: String, // 'user' or 'admin'
     pub created_at: DateTime<Utc>,
 }
 
@@ -153,9 +153,9 @@ impl From<User> for UserInfo {
 /// JWT claims structure for token generation and validation
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,        // User ID (subject)
-    pub email: String,      // User email
-    pub exp: usize,         // Expiration timestamp (UNIX epoch)
+    pub sub: String,   // User ID (subject)
+    pub email: String, // User email
+    pub exp: usize,    // Expiration timestamp (UNIX epoch)
 }
 
 // ============================================
