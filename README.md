@@ -397,22 +397,55 @@ The application includes a full admin panel built with React Admin:
 
 ### Creating an Admin User
 
+There are two ways to create an admin user:
+
+#### Option 1: Using the interactive script (recommended)
+
 ```bash
 cd backend
-cargo run --bin generate_hash
-sqlite3 todo.db
+./scripts/create_admin.sh
+```
 
-# Create admin user (password: admin123)
+The script will prompt you for:
+- Username (default: admin)
+- Email (default: admin@example.com)
+- Password (min 8 characters, default: admin123)
+
+#### Option 2: Manual creation
+
+```bash
+cd backend
+
+# Generate password hash
+cargo run --bin generate_hash
+
+# Then insert the admin user
+sqlite3 todo.db
+```
+
+```sql
+-- Use the hash from the previous command
 INSERT INTO users (id, username, email, password_hash, role, created_at) 
 VALUES (
     'admin-001',
     'admin',
     'admin@example.com',
-    '$argon2id$v=19$m=4096,t=3,p=1$...',  # Use your generated hash
+    '$argon2id$v=19$m=4096,t=3,p=1$...',  -- Replace with generated hash
     'admin',
     datetime('now')
 );
+
+-- Verify the user was created
+SELECT id, username, email, role FROM users WHERE role = 'admin';
+.exit
 ```
+
+### Admin Login
+
+After creating the admin user:
+1. Navigate to `http://localhost:5173/admin`
+2. Enter the admin credentials
+3. You'll be redirected to the admin dashboard
 
 ## Security Features
 
